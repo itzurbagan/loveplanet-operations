@@ -7,6 +7,17 @@
  const findText=(selector,regex)=>[...document.querySelectorAll(selector)].find(e=>visible(e)&&regex.test(e.textContent.trim()));
  let running=false,active=false,visited=new Map(),lastError='';
  let lastPage=0,lastRefresh=Date.now(),pageCount=0,pageIdle=0;
+ function siteState(){
+  const text=document.body.innerText;
+  return /Потеряно соединение с сервером|ERR_TIMED_OUT|Не удается получить доступ к сайту/.test(text)?'offline':'online';
+ }
+ function recoverSite(){
+  status('LovePlanet потерял соединение; повтор через минуту');
+  if(document.querySelector('#text_area')?.innerText.trim())return;
+  const key='lp-network-reload',last=Number(sessionStorage.getItem(key)||Date.now());
+  if(!sessionStorage.getItem(key))sessionStorage.setItem(key,String(last));
+  if(Date.now()-last>=60000){sessionStorage.setItem(key,String(Date.now()));location.reload()}
+ }
  let badge=document.createElement('div');badge.id='lp-agent-indicator';badge.style.cssText='position:fixed;bottom:12px;left:12px;z-index:2147483647;padding:10px 14px;border-radius:8px;background:#173c29;color:white;font:12px system-ui;max-width:320px;box-shadow:0 2px 16px #0003';document.body.append(badge);
  const status=t=>{badge.textContent='Автобот · '+t;lastError=t};
  function account(){
@@ -44,6 +55,7 @@
  async function openContact(contact){let row=document.getElementById('cnt_'+contact);if(!row)return false;row.querySelector('.chat_contact_name')?.click();await nap(1200);return document.querySelector('li[id^="cnt_"].selected')?.id==='cnt_'+contact}
  async function sendReady(a,turn){
   let result=await snapshot(a);if(!result||result.d.contact!==turn.contact||result.d.messages.at(-1)?.id!==turn.incoming)return;
+  if(siteState()!=='online'){recoverSite();return}
   if(result.r.status!=='ready')return;
   let input=document.querySelector('#text_area'),button=document.querySelector('#send_button');if(!visible(input)||!visible(button)||input.innerText.trim()){status('пауза: в поле есть ручной текст');return}
   // Recheck after every await. Never send into a different conversation.
@@ -55,7 +67,7 @@
   input.focus();input.textContent=claim.reply;input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:claim.reply}));
   if(read(a)?.contact!==claim.contact)return;
   button.click();status('проверка доставки · '+result.d.name);
-  for(let i=0;i<16;i++){await nap(500);let checked=await snapshot(a);if(!checked||checked.d.contact!==claim.contact)break;if(checked.d.messages.some(m=>m.role==='assistant'&&m.text===claim.reply&&Number(m.id)>Number(claim.incoming))){status('ответ отправлен · '+result.d.name);return}}
+  for(let i=0;i<16;i++){await nap(500);if(siteState()!=='online'){await bridge({action:'delivery_error',id:claim.id});recoverSite();return}let checked=await snapshot(a);if(!checked||checked.d.contact!==claim.contact)break;if(checked.d.messages.some(m=>m.role==='assistant'&&m.text===claim.reply&&Number(m.id)>Number(claim.incoming))){status('ответ отправлен · '+result.d.name);return}}
   status('доставка не подтверждена; повтор заблокирован');
  }
  async function step(){
@@ -67,7 +79,9 @@
     if(ownProfile){status('открывает профиль');ownProfile.click()}else status('войти в аккаунт LovePlanet');
     return;
    }
-   let poll=await bridge({action:'poll',account:a,scan:{version:'0.4.0',loaded:document.querySelectorAll('li[id^="cnt_"]').length,read:visited.size}});if(poll.status!=='connected'){status(poll.status==='other_tab_active'?'этот аккаунт обслуживается в другой вкладке':'нет связи с локальным сервером');return}
+   const network=siteState();
+   let poll=await bridge({action:'poll',account:a,scan:{version:'0.4.1',siteStatus:network,loaded:document.querySelectorAll('li[id^="cnt_"]').length,read:visited.size}});if(poll.status!=='connected'){status(poll.status==='other_tab_active'?'этот аккаунт обслуживается в другой вкладке':'нет связи с локальным сервером');return}
+   if(network!=='online'){recoverSite();return}
    if(!visible(document.querySelector('#history_area'))){findText('a[href="/a-message"]',/^Сообщения$/)?.click();await nap(1200)}
    let current=await snapshot(a);
    if(document.querySelector('#text_area')?.innerText.trim()){status('сохраняет ручной черновик; очисти поле для автоответа');return}

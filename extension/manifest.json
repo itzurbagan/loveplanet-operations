@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LovePlanet · автономный помощник",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Входящие → OpenRouter / Ollama → ответ. Две стороны переписки и подтверждённая доставка в админке.",
   "permissions": [
     "storage"

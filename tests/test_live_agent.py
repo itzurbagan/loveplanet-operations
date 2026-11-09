@@ -54,6 +54,15 @@ class BridgeTest(unittest.TestCase):
   def reject(reply,history):raise ValueError('long_dash_guard')
   self.s.check_reply_policy=reject
   self.assertEqual(live.claim(t['id'],'client','100')['status'],'policy_requeued')
+ def test_lost_site_connection_blocks_sending_but_not_local_queue(self):
+  t=live.snapshot(self.doc(),'client');live.process('adilya')
+  live.poll('adilya','client',{'siteStatus':'offline','version':'0.4.1'})
+  self.assertEqual(live.claim(t['id'],'client','100')['status'],'site_unavailable')
+  live.poll('adilya','client',{'siteStatus':'online','version':'0.4.1'})
+  self.assertEqual(live.claim(t['id'],'client','100')['status'],'send')
+  self.assertEqual(live.request({'action':'delivery_error','id':t['id'],'client':'stranger'})['status'],'lease_expired')
+  self.assertEqual(live.request({'action':'delivery_error','id':t['id'],'client':'client'})['status'],'delivery_uncertain')
+  with live.db() as c:self.assertEqual(c.execute('SELECT status FROM live_turns').fetchone()[0],'uncertain')
  def test_minute_gap_applies_to_chat_not_other_chats(self):
   self.s.CONFIG.update(send_gap_min_seconds=2,send_gap_max_seconds=2,chat_send_gap_seconds=60)
   now=time.time();d=self.doc();first=live.snapshot(d,'client');live.process('adilya');live.claim(first['id'],'client','100')

@@ -16,7 +16,7 @@ The dashboard shows incoming and outgoing history, account connection/version, l
 2. Edit `config.json`: account names, profile URLs, Telegram usernames, provider/model and delay settings. Set the matching profile-login mapping in `extension/content.js`.
 3. Run `python3 server.py` and open http://127.0.0.1:8787/#dialogs.
 4. Load the `extension/` folder as an unpacked extension in each separate signed-in browser profile. Add its exact `chrome-extension://ID` origin to `extension_origins` in `config.json` if needed for CORS. Restart the service after config edits.
-5. Open your own LovePlanet profile and enable the bot from the extension popup. Check that the dashboard reports version 0.4.0 and increasing loaded/saved counts.
+5. Open your own LovePlanet profile and enable the bot from the extension popup. Check that the dashboard reports version 0.4.1 and increasing loaded/saved counts.
 
 For a macOS background service, run `python3 install-local-service.py`. Runtime is `~/Library/Application Support/LovePlanet Operations/`. Pair the extension to that runtime with `python3 configure.py --data-dir "$HOME/Library/Application Support/LovePlanet Operations/data" --openrouter-key`. The service preserves runtime history across deployments. Load the updated extension and refresh the LovePlanet tab after extension changes.
 
@@ -44,3 +44,5 @@ Tests use temporary data and mocked provider calls. They do not send messages to
 ## Repository contents
 
 Only source code, prompt, example config, setup scripts and tests belong in Git. Actual configs, keys, extension pairing secrets, cookies, browser profiles, databases, personal messages, runtime reports and screenshots are excluded. Never commit the runtime data folder.
+
+When the site displays a lost-connection modal, the extension suspends sends and retries page loading at most once per minute if there is no manual draft. This cannot repair an upstream site or network outage.

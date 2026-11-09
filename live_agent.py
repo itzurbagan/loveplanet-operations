@@ -137,6 +137,9 @@ def claim(tid,client,last):
         if not t or t['status']!='ready' or t['incoming']!=last:return {'status':'stale'}
         h=HEARTBEATS.get(t['account'],{})
         if h.get('client')!=client or time.time()-h.get('at',0)>30:return {'status':'lease_expired'}
+        minimum=SERVICE.CONFIG.get('minimum_extension_version')
+        if minimum and h.get('scan',{}).get('version')!=minimum:return {'status':'extension_update_required'}
+        if h.get('scan',{}).get('siteStatus')=='offline':return {'status':'site_unavailable'}
         now=time.time()
         contact_next=c.execute('SELECT next_send FROM live_contacts WHERE account=? AND contact=?',(t['account'],t['contact'])).fetchone()[0]
         if now<max(t['due'],contact_next) or now<c.execute('SELECT next_send FROM live_accounts WHERE account=?',(t['account'],)).fetchone()[0]:return {'status':'waiting_delay'}
@@ -161,6 +164,7 @@ def poll(account,client,scan=None):
         scan=scan if isinstance(scan,dict) else {}
         progress={k:max(0,min(100000,v)) for k,v in scan.items() if k in ('loaded','read') and isinstance(v,int)}
         progress['version']=str(scan.get('version','0.3.x'))[:20]
+        progress['siteStatus']='offline' if scan.get('siteStatus')=='offline' else 'online' if scan.get('siteStatus')=='online' else 'unknown'
         HEARTBEATS[account]={**h,'client':client,'at':now,'status':'connected','scan':progress}
     with db() as c:
         c.execute("UPDATE live_turns SET status='uncertain' WHERE status='sending' AND claimed<?",(now-60,))
@@ -181,6 +185,12 @@ def request(body):
     if action=='snapshot':return snapshot(body['dialog'],client)
     if action=='poll':return poll(body['account'],client,body.get('scan'))
     if action=='claim':return claim(body['id'],client,body['incoming'])
+    if action=='delivery_error':
+        with LOCK,db() as c:
+            turn=c.execute('SELECT * FROM live_turns WHERE id=?',(body.get('id'),)).fetchone()
+            if not turn or HEARTBEATS.get(turn['account'],{}).get('client')!=client:return {'status':'lease_expired'}
+            c.execute("UPDATE live_turns SET status='uncertain',error='site_connection_lost' WHERE id=? AND status='sending'",(turn['id'],))
+        return {'status':'delivery_uncertain'}
     if action=='status':return status()
     raise ValueError('invalid_action')
 

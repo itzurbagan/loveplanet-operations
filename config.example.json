@@ -26,5 +26,6 @@
   "fallback_model": "qwen2.5:7b",
   "openrouter_timeout_seconds": 25,
   "chat_send_gap_seconds": 60,
-  "generation_workers_per_account": 2
+  "generation_workers_per_account": 2,
+  "minimum_extension_version": "0.4.1"
 }
