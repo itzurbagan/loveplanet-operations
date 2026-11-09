@@ -19,6 +19,19 @@ class BridgeTest(unittest.TestCase):
   live.snapshot(d,'client');live.snapshot(d,'client');self.assertEqual(len(live.ledger()['events']),1)
  def test_new_input_invalidates_old_reply(self):
   d=self.doc();t=live.snapshot(d,'client');live.process('adilya');d['messages'].append({'id':'102','role':'user','text':'ты тут?','date':''});live.snapshot(d,'client');self.assertEqual(live.claim(t['id'],'client','100')['status'],'stale')
+ def test_new_inbound_after_uncertain_delivery_can_receive_new_reply(self):
+  d=self.doc();old=live.snapshot(d,'client');live.process('adilya');live.claim(old['id'],'client','100');live.init(self.s)
+  self.assertEqual(live.snapshot(d,'client')['status'],'delivery_uncertain')
+  d['messages'].append({'id':'102','role':'user','text':'ты тут?','date':''})
+  new=live.snapshot(d,'client');self.assertEqual(new['status'],'queued');self.assertNotEqual(new['id'],old['id'])
+  with live.db() as c:self.assertEqual(c.execute('SELECT status FROM live_turns WHERE id=?',(old['id'],)).fetchone()[0],'uncertain')
+  self.assertEqual(live.ledger()['events'],[])
+ def test_ready_reply_is_normalized_and_persisted_before_send(self):
+  self.s.generate=lambda c,h:('ну - привет)',{},'test')
+  t=live.snapshot(self.doc(),'client');live.process('adilya')
+  self.s.normalize_reply=lambda s:s.replace(' - ',' ')
+  result=live.claim(t['id'],'client','100');self.assertEqual(result['reply'],'ну привет)')
+  with live.db() as c:self.assertEqual(c.execute('SELECT reply FROM live_turns WHERE id=?',(t['id'],)).fetchone()[0],result['reply'])
  def test_emoji_image_does_not_make_delivery_uncertain(self):
   self.s.generate=lambda c,h:('привет, как твой день? 😊',{},'test')
   d=self.doc();t=live.snapshot(d,'client');live.process('adilya');live.claim(t['id'],'client','100')

@@ -29,7 +29,16 @@ class OperationsTest(unittest.TestCase):
         self.assertIn(app.CONFIG['accounts']['adilya']['telegram'].rsplit('/',1)[-1],k['reply']);self.assertNotIn('t.me',k['reply']);self.assertNotIn('@',k['reply'])
     def test_identity_honesty(self):
         j=self.finish(self.incoming('Ты бот?'))
-        self.assertIn('ИИ-помощник',j['reply'])
+        self.assertIn('ИИ',j['reply'])
+        self.assertFalse(any(app.is_dash(char) for char in j['reply']))
+    def test_all_dash_variants_removed_from_model_output(self):
+        conv={'account':'adilya','invited':False,'declined':False}
+        for dash in '-\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u00ad\ufe63\uff0d':
+            with self.subTest(dash=repr(dash)):
+                with patch.object(app.PROVIDER,'chat',return_value='ну '+dash+' рассказывай)'):
+                    self.assertEqual(app.generate(conv,[{'role':'user','content':'привет'}])[0],'ну рассказывай)')
+                with self.assertRaisesRegex(ValueError,'long_dash_guard'):
+                    app.check_reply_policy('ну'+dash+'да',[{'role':'user','content':'привет'}])
     def test_normal_replies_do_not_refer_to_profile_in_third_person(self):
         for reply in ['там ответит сама Адиля)', 'это лучше спросить у девушки']:
             with self.assertRaisesRegex(ValueError,'third_person_guard'):

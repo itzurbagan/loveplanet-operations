@@ -97,7 +97,9 @@ def snapshot(doc,client):
             if state['stopped']:
                 goodbye=c.execute("SELECT * FROM live_turns WHERE account=? AND contact=? AND incoming=? AND status='ready'",(account,contact,last['id'])).fetchone()
                 return dict(goodbye) if goodbye else {'status':'waiting_for_contact'}
-            if c.execute("SELECT 1 FROM live_turns WHERE account=? AND contact=? AND status IN ('sending','uncertain')",(account,contact)).fetchone():return {'status':'delivery_uncertain'}
+            # A later incoming message is a new turn. Keep the old delivery unresolved,
+            # but do not freeze a conversation forever or resend the old reply.
+            if c.execute("SELECT 1 FROM live_turns WHERE account=? AND contact=? AND (status='sending' OR (status='uncertain' AND incoming=?))",(account,contact,last['id'])).fetchone():return {'status':'delivery_uncertain'}
             tid=hashlib.sha256((account+'|'+contact+'|'+last['id']).encode()).hexdigest()[:24]
             c.execute("INSERT OR IGNORE INTO live_turns(id,account,contact,incoming,status,due,created) VALUES(?,?,?,?,?,?,?)",(tid,account,contact,last['id'],'queued',now+random.uniform(SERVICE.CONFIG['delay_min_seconds'],SERVICE.CONFIG['delay_max_seconds']),now))
             turn=dict(c.execute('SELECT * FROM live_turns WHERE id=?',(tid,)).fetchone())
@@ -143,18 +145,19 @@ def claim(tid,client,last):
         now=time.time()
         contact_next=c.execute('SELECT next_send FROM live_contacts WHERE account=? AND contact=?',(t['account'],t['contact'])).fetchone()[0]
         if now<max(t['due'],contact_next) or now<c.execute('SELECT next_send FROM live_accounts WHERE account=?',(t['account'],)).fetchone()[0]:return {'status':'waiting_delay'}
+        reply=SERVICE.normalize_reply(t['reply']) if hasattr(SERVICE,'normalize_reply') else t['reply']
         if hasattr(SERVICE,'check_reply_policy'):
             doc=json.loads(history_path(t['account'],t['contact']).read_text())
             history=[{'role':m['role'],'content':m['text']} for m in doc['messages']]
-            try:SERVICE.check_reply_policy(t['reply'],history)
+            try:SERVICE.check_reply_policy(reply,history)
             except ValueError as e:
                 c.execute("UPDATE live_turns SET status='queued',reply=NULL,engine=NULL,attempts=0,error=?,due=? WHERE id=?",(str(e),now+2,tid))
                 return {'status':'policy_requeued'}
         gap=random.uniform(SERVICE.CONFIG.get('send_gap_min_seconds',45),SERVICE.CONFIG.get('send_gap_max_seconds',90))
         c.execute('UPDATE live_accounts SET next_send=? WHERE account=?',(now+gap,t['account']))
         c.execute('UPDATE live_contacts SET next_send=? WHERE account=? AND contact=?',(now+SERVICE.CONFIG.get('chat_send_gap_seconds',60),t['account'],t['contact']))
-        c.execute("UPDATE live_turns SET status='sending',claimed=? WHERE id=?",(time.time(),tid))
-        return {'status':'send','reply':t['reply'],'id':tid,'contact':t['contact'],'incoming':t['incoming']}
+        c.execute("UPDATE live_turns SET status='sending',claimed=?,reply=? WHERE id=?",(time.time(),reply,tid))
+        return {'status':'send','reply':reply,'id':tid,'contact':t['contact'],'incoming':t['incoming']}
 
 def poll(account,client,scan=None):
     if account not in SERVICE.CONFIG['accounts']:raise ValueError('unknown_account')

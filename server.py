@@ -2,7 +2,7 @@
 """Local/server operations service. No LovePlanet sender is configured."""
 import sys, live_agent
 from model_provider import ModelProvider
-import base64, hashlib, hmac, json, os, random, re, sqlite3, threading, time, uuid
+import base64, hashlib, hmac, json, os, random, re, sqlite3, threading, time, uuid, unicodedata
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -114,8 +114,14 @@ def enqueue(data):
         event(db,'inbound',jid)
         return dict(db.execute('SELECT * FROM jobs WHERE id=?',(jid,)).fetchone())
 
+def is_dash(char):
+    return unicodedata.category(char)=='Pd' or char in '\u00ad\u2212\u2043\u2053'
+
+def normalize_reply(reply):
+    return re.sub(r'\s+',' ',''.join(' ' if is_dash(char) else char for char in reply)).strip()
+
 def check_reply_policy(reply,history):
-    if '\u2014' in reply or '\u2013' in reply:raise ValueError('long_dash_guard')
+    if any(is_dash(char) for char in reply):raise ValueError('long_dash_guard')
     text=history[-1]['content'] if history else ''
     identity_question=re.search(r'ты бот|ты робот|\bии\b|кто (мне )?пишет|автоматизац|нейросет|ты настоящ|ты фейк',text,re.I)
     if not identity_question and re.search(r'сама (Адиля|Любовь|девушка)|девушка (ответит|расскажет|уточнит|продолжит)|у девушки|ИИ.помощник',reply,re.I):
@@ -131,7 +137,7 @@ def policy_reply(text,conv):
     if re.search(r'не пиши|не пишите|отстань|удали мой|больше не писать|стоп\b',low):
         return 'хорошо, больше не буду писать', {'stopped':1}
     if re.search(r'ты бот|ты робот|\bии\b|кто (мне )?пишет|автоматизац|нейросет|ты настоящ|ты фейк',low):
-        return 'здесь отвечает ИИ-помощник девушки; в Telegram она продолжит сама)', {}
+        return 'здесь отвечает помощник на базе ИИ; в Telegram девушка продолжит сама)', {}
     if re.search(r'(не хочу|не буду|неудобно|не пользуюсь|не нужен).{0,25}(телег|тг|telegram)|(телег|тг|telegram).{0,20}(не хочу|неудобно|не буду)',low):
         return 'ну тогда не буду настаивать)', {'declined':1}
     if re.search(r'националь|татарк|русская|какой (ты )?нации|где (ты )?учил|учишься|студентка|образование|сколько лет (работаешь|опыт)',low):
@@ -151,6 +157,7 @@ def generate(conv,history,repair=None):
     text=history[-1]['content']
     reply,updates=policy_reply(text,conv)
     if reply:
+        reply=normalize_reply(reply)
         check_reply_policy(reply,history)
         return reply,updates,'rules'
     account=CONFIG['accounts'][conv['account']]
@@ -166,12 +173,12 @@ def generate(conv,history,repair=None):
     count=sum(m['role']=='assistant' for m in history)
     prompt+='\nСостояние: ответов ранее '+str(count)+'. Telegram уже предложен: '+str(bool(conv['invited']))+'. Отказ от Telegram: '+str(bool(conv['declined']))+'.'
     if repair:
-        corrections={'unsolicited_massage_guard':'Не упоминай массаж или работу. Ответь только по теме последнего сообщения.','invitation_guard':'Не предлагай Telegram и не указывай контакты. Продолжи текущую тему.','link_guard':'Убери все ссылки и контакты.','long_dash_guard':'Не используй длинное или среднее тире.','price_guard':'Не называй цену или стоимость.','invalid_generation':'Одна короткая завершённая фраза, максимум один вопрос.'}
+        corrections={'unsolicited_massage_guard':'Не упоминай массаж или работу. Ответь только по теме последнего сообщения.','invitation_guard':'Не предлагай Telegram и не указывай контакты. Продолжи текущую тему.','link_guard':'Убери все ссылки и контакты.','long_dash_guard':'Запрещены любые тире, дефисы и знаки минуса. Перефразируй без них.','price_guard':'Не называй цену или стоимость.','invalid_generation':'Одна короткая завершённая фраза, максимум один вопрос.'}
         prompt+='\nПредыдущий вариант отклонён. Перепиши ответ. '+corrections.get(repair,'Строго соблюдай ограничения, не выдумывай факты, ответь кратко по содержанию сообщения.')
         if repair=='unsolicited_massage_guard':
             prompt+='\nВ этом ответе запрещены слова массаж, массажистка, услуги, работа и контакты. На предложение встретиться откажи легко и игриво. На вопрос что ищешь ответь о спокойном общении без обещаний встреч. На чем занимаешься в приветствии не рассказывай о профессии. Не повторяй прежний вариант.'
     reply=PROVIDER.chat([{'role':'system','content':prompt}]+history)
-    reply=reply.replace('\u2014',',').replace('\u2013',',')
+    reply=normalize_reply(reply)
     reply=re.sub('[\U0001F300-\U0001FAFF\uFE0F\u200D]','',reply).strip()
     check_reply_policy(reply,history)
     # Fail closed: questionable generations stay in error for operator review.
