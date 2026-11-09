@@ -90,7 +90,7 @@ class OperationsTest(unittest.TestCase):
         self.assertEqual(j['status'],'cancelled')
     def test_metrics_only_local_confirmed_loveplanet(self):
         now=app.datetime.now(app.timezone.utc).isoformat()
-        event={'eventId':'one','account':'adilya','contact':'person','at':now,'reply':'adi83742','confirmed':True,'autonomous':True}
+        event={'eventId':'one','account':'adilya','contact':'person','at':now,'reply':app.CONFIG['accounts']['adilya']['telegram'].rsplit('/',1)[-1],'confirmed':True,'autonomous':True}
         records=[event,event,dict(event,eventId='other',site='OtherSite'),dict(event,eventId='draft',confirmed=False),dict(event,eventId='sandbox',sandbox=True)]
         (app.DATA/'live-events.json').write_text(json.dumps({'events':records}))
         result=app.metrics(0)
