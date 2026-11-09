@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "LovePlanet · автономный помощник",
+  "version": "0.4.0",
+  "description": "Входящие → OpenRouter / Ollama → ответ. Две стороны переписки и подтверждённая доставка в админке.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://loveplanet.ru/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://loveplanet.ru/*"
+      ],
+      "js": [
+        "scheduler.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "LovePlanet Agent",
+    "default_popup": "popup.html"
+  }
+}

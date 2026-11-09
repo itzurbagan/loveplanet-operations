@@ -1,0 +1,16 @@
+data/
+config.json
+.env
+*.key
+*.pem
+*.crx
+*.zip
+*.sqlite*
+*.log
+__pycache__/
+.DS_Store
+extension/bridge-config.json
+autonomy-*
+verification*.json
+*.png
+SYNC.md
