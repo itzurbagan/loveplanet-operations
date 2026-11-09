@@ -53,6 +53,8 @@ class ProviderTest(unittest.TestCase):
         with patch('model_provider.urlopen',side_effect=send):
             self.assertEqual(self.provider.chat([]),'привет)')
             self.assertEqual(self.provider.engine,'ollama:qwen2.5:7b')
+            self.assertGreater(self.provider.remote_retry_at,0)
+            self.assertEqual(self.provider.chat([]),'привет)')
 
 if __name__ == '__main__':
     unittest.main()

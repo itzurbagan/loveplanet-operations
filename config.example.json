@@ -1,7 +1,7 @@
 {
   "model": "qwen/qwen3-235b-a22b-2507",
   "delay_min_seconds": 60,
-  "delay_max_seconds": 150,
+  "delay_max_seconds": 75,
   "accounts": {
     "adilya": {
       "name": "Account 1",
@@ -20,9 +20,11 @@
     }
   },
   "provider": "openrouter",
-  "send_gap_min_seconds": 45,
-  "send_gap_max_seconds": 90,
+  "send_gap_min_seconds": 2,
+  "send_gap_max_seconds": 4,
   "extension_origins": [],
   "fallback_model": "qwen2.5:7b",
-  "openrouter_timeout_seconds": 25
+  "openrouter_timeout_seconds": 25,
+  "chat_send_gap_seconds": 60,
+  "generation_workers_per_account": 2
 }

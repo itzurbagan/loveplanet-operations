@@ -36,6 +36,8 @@ def init(service):
         claimed REAL, site_id TEXT, UNIQUE(account,contact,incoming));
         CREATE TABLE IF NOT EXISTS live_contacts(account TEXT,contact TEXT,stopped INTEGER DEFAULT 0,declined INTEGER DEFAULT 0, PRIMARY KEY(account,contact));''')
         c.execute('CREATE TABLE IF NOT EXISTS live_accounts(account TEXT PRIMARY KEY,next_send REAL DEFAULT 0)')
+        contact_columns={r[1] for r in c.execute('PRAGMA table_info(live_contacts)')}
+        if 'next_send' not in contact_columns:c.execute('ALTER TABLE live_contacts ADD COLUMN next_send REAL DEFAULT 0')
         for account in SERVICE.CONFIG['accounts']:c.execute('INSERT OR IGNORE INTO live_accounts(account) VALUES(?)',(account,))
         columns={r[1] for r in c.execute('PRAGMA table_info(live_turns)')}
         if 'attempts' not in columns:c.execute('ALTER TABLE live_turns ADD COLUMN attempts INTEGER DEFAULT 0')
@@ -136,7 +138,8 @@ def claim(tid,client,last):
         h=HEARTBEATS.get(t['account'],{})
         if h.get('client')!=client or time.time()-h.get('at',0)>30:return {'status':'lease_expired'}
         now=time.time()
-        if now<t['due'] or now<c.execute('SELECT next_send FROM live_accounts WHERE account=?',(t['account'],)).fetchone()[0]:return {'status':'waiting_delay'}
+        contact_next=c.execute('SELECT next_send FROM live_contacts WHERE account=? AND contact=?',(t['account'],t['contact'])).fetchone()[0]
+        if now<max(t['due'],contact_next) or now<c.execute('SELECT next_send FROM live_accounts WHERE account=?',(t['account'],)).fetchone()[0]:return {'status':'waiting_delay'}
         if hasattr(SERVICE,'check_reply_policy'):
             doc=json.loads(history_path(t['account'],t['contact']).read_text())
             history=[{'role':m['role'],'content':m['text']} for m in doc['messages']]
@@ -146,6 +149,7 @@ def claim(tid,client,last):
                 return {'status':'policy_requeued'}
         gap=random.uniform(SERVICE.CONFIG.get('send_gap_min_seconds',45),SERVICE.CONFIG.get('send_gap_max_seconds',90))
         c.execute('UPDATE live_accounts SET next_send=? WHERE account=?',(now+gap,t['account']))
+        c.execute('UPDATE live_contacts SET next_send=? WHERE account=? AND contact=?',(now+SERVICE.CONFIG.get('chat_send_gap_seconds',60),t['account'],t['contact']))
         c.execute("UPDATE live_turns SET status='sending',claimed=? WHERE id=?",(time.time(),tid))
         return {'status':'send','reply':t['reply'],'id':tid,'contact':t['contact'],'incoming':t['incoming']}
 
@@ -161,6 +165,8 @@ def poll(account,client,scan=None):
     with db() as c:
         c.execute("UPDATE live_turns SET status='uncertain' WHERE status='sending' AND claimed<?",(now-60,))
         pending=[dict(r) for r in c.execute("SELECT id,contact,status,due,incoming FROM live_turns WHERE account=? AND status IN ('ready','queued','generating','sending','uncertain') ORDER BY CASE status WHEN 'uncertain' THEN 0 WHEN 'ready' THEN 1 ELSE 2 END,created",(account,))]
+        contact_delays={r['contact']:r['next_send'] for r in c.execute('SELECT contact,next_send FROM live_contacts WHERE account=?',(account,))}
+        for turn in pending:turn['due']=max(turn['due'],contact_delays.get(turn['contact'],0))
         next_send=c.execute('SELECT next_send FROM live_accounts WHERE account=?',(account,)).fetchone()[0]
     return {'status':'connected','turns':pending,'serverTime':now,'nextSendAt':next_send}
 
@@ -186,4 +192,6 @@ def worker(account):
 
 def start(service):
     init(service)
-    for account in SERVICE.CONFIG['accounts']:threading.Thread(target=worker,args=(account,),daemon=True).start()
+    for account in SERVICE.CONFIG['accounts']:
+        for _ in range(max(1,min(3,int(SERVICE.CONFIG.get('generation_workers_per_account',2))))):
+            threading.Thread(target=worker,args=(account,),daemon=True).start()

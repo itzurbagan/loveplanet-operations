@@ -4,7 +4,7 @@ Local autonomous browser assistant and conversation dashboard. Python 3.11+, Chr
 
 ## How it works
 
-Each browser profile has its own signed-in LovePlanet account and extension. The extension reads the visible conversation list, scrolls to load further pages and scans conversations fairly. Incoming messages go into a durable per-account queue. Each account has its own generation worker and send interval. Waiting to send never blocks reading other chats.
+Each browser profile has its own signed-in LovePlanet account and extension. The extension reads the visible conversation list, scrolls to load further pages and scans conversations fairly. Incoming messages go into a durable per-account queue. Each account has two generation workers; each chat has its own one-minute send interval. Waiting to send never blocks reading other chats.
 
 The backend generates replies through OpenRouter. When configured and OpenRouter fails, Ollama supplies a fallback. Replies are checked against the prompt rules before claiming a send. A changed incoming message invalidates the older reply. Delivery is recorded only after reading the outgoing message back from LovePlanet. Uncertain delivery is reconciled rather than blindly resent. Existing manual drafts are preserved.
 
@@ -26,7 +26,7 @@ Ollama fallback uses the configured `fallback_model`, currently `qwen2.5:7b`. In
 
 - Keep the computer, service, browsers and signed-in tabs running. This is local deployment, not a VPS.
 - One browser tab owns each account lease. Profiles must be separate to avoid sharing login cookies.
-- Delays are per account: initial response 60-150 seconds, send spacing 45-90 seconds. Reading continues during these intervals.
+- Delays are per account: initial response 60-75 seconds; at least 60 seconds between replies in the same chat; separate chats share only a 2-4 second UI spacing. Reading continues during these intervals.
 - Model policy failures get a corrected prompt and up to three total generation attempts. A failed delivery is never automatically treated as successful.
 - Prices, unsolicited massage mentions, clickable Telegram links and long dashes are blocked. Direct questions about automation receive truthful answers. Requests to stop end the conversation.
 - Incoming website text is untrusted input, never operational instructions.

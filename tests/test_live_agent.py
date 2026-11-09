@@ -1,4 +1,6 @@
-import unittest,tempfile,types,sys,json
+import unittest,tempfile,types,sys,json,time,threading
+from unittest.mock import patch
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import live_agent as live
@@ -52,6 +54,27 @@ class BridgeTest(unittest.TestCase):
   def reject(reply,history):raise ValueError('long_dash_guard')
   self.s.check_reply_policy=reject
   self.assertEqual(live.claim(t['id'],'client','100')['status'],'policy_requeued')
+ def test_minute_gap_applies_to_chat_not_other_chats(self):
+  self.s.CONFIG.update(send_gap_min_seconds=2,send_gap_max_seconds=2,chat_send_gap_seconds=60)
+  now=time.time();d=self.doc();first=live.snapshot(d,'client');live.process('adilya');live.claim(first['id'],'client','100')
+  d['messages'].append({'id':'101','role':'assistant','text':'привет)','date':''});live.snapshot(d,'client')
+  d['messages'].append({'id':'102','role':'user','text':'как дела?','date':''});same=live.snapshot(d,'client');live.process('adilya')
+  other=self.doc();other['contact']='other';next_turn=live.snapshot(other,'client');live.process('adilya')
+  with patch.object(live.time,'time',return_value=now+5):
+   self.assertEqual(live.claim(same['id'],'client','102')['status'],'waiting_delay')
+   self.assertEqual(live.claim(next_turn['id'],'client','100')['status'],'send')
+   row=next(t for t in live.poll('adilya','client')['turns'] if t['id']==same['id'])
+   self.assertGreater(row['due'],now+55)
+ def test_two_workers_generate_different_chats_concurrently(self):
+  barrier=threading.Barrier(2)
+  def generate(c,h):barrier.wait(timeout=3);return ('привет)',{},'test')
+  self.s.generate=generate
+  for contact in ['one','two']:
+   d=self.doc();d['contact']=contact;live.snapshot(d,'client')
+  with ThreadPoolExecutor(max_workers=2) as pool:
+   results=list(pool.map(live.process,['adilya','adilya']))
+  self.assertEqual(results,[True,True])
+  self.assertEqual([t['status'] for t in live.poll('adilya','client')['turns']],['ready','ready'])
  def test_other_tab_cannot_send(self):
   d=self.doc();t=live.snapshot(d,'first');live.process('adilya');self.assertEqual(live.snapshot(d,'second')['status'],'other_tab_active');self.assertEqual(live.claim(t['id'],'second','100')['status'],'lease_expired')
  def test_manual_outgoing_cancels_reply(self):

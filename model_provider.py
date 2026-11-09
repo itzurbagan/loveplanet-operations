@@ -19,18 +19,22 @@ class ModelProvider:
         self.fallback_model = config.get('fallback_model')
         self.openrouter_timeout = config.get('openrouter_timeout_seconds',25)
         self.local = threading.local()
+        self.remote_retry_at=0
 
     @property
     def engine(self):return getattr(self.local,'engine',self.provider)
 
     def chat(self,messages):
         try:
+            if self.fallback_model and time.time()<self.remote_retry_at:raise ProviderError('openrouter_cooldown')
             reply=self.primary_chat(messages)
+            self.remote_retry_at=0
             self.local.engine=self.provider
             return reply
         except ProviderError as error:
             if self.provider!='openrouter' or not self.fallback_model or not str(error).startswith('openrouter_'):raise
             reason=str(error)
+            if reason!='openrouter_cooldown':self.remote_retry_at=time.time()+60
             try:reply=self.ollama_chat(messages,self.fallback_model)
             except (URLError,TimeoutError,HTTPError,ValueError):
                 self.last_status='fallback_unavailable'

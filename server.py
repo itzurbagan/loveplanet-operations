@@ -119,7 +119,7 @@ def check_reply_policy(reply,history):
     text=history[-1]['content'] if history else ''
     if re.search(r'https?://|www\.|t\.me/|telegram\.(me|dog)/|@[A-Za-z0-9_]+',reply,re.I):
         raise ValueError('link_guard')
-    asked_about_work=re.search(r'массаж|кем.{0,12}работ|работаешь|работаете|професси|по работе|чем.{0,20}зарабатыва',text,re.I)
+    asked_about_work=re.search(r'массаж|кем.{0,12}(работ|труд)|работаешь|работаете|професси|по работе|чем.{0,20}зарабатыва',text,re.I)
     if re.search('массаж',reply,re.I) and not asked_about_work:
         raise ValueError('unsolicited_massage_guard')
 
@@ -165,6 +165,8 @@ def generate(conv,history,repair=None):
     if repair:
         corrections={'unsolicited_massage_guard':'Не упоминай массаж или работу. Ответь только по теме последнего сообщения.','invitation_guard':'Не предлагай Telegram и не указывай контакты. Продолжи текущую тему.','link_guard':'Убери все ссылки и контакты.','long_dash_guard':'Не используй длинное или среднее тире.','price_guard':'Не называй цену или стоимость.','invalid_generation':'Одна короткая завершённая фраза, максимум один вопрос.'}
         prompt+='\nПредыдущий вариант отклонён. Перепиши ответ. '+corrections.get(repair,'Строго соблюдай ограничения, не выдумывай факты, ответь кратко по содержанию сообщения.')
+        if repair=='unsolicited_massage_guard':
+            prompt+='\nВ этом ответе запрещены слова массаж, массажистка, услуги, работа и контакты. На предложение встретиться откажи легко и игриво. На вопрос что ищешь ответь о спокойном общении без обещаний встреч. На чем занимаешься в приветствии не рассказывай о профессии. Не повторяй прежний вариант.'
     reply=PROVIDER.chat([{'role':'system','content':prompt}]+history)
     reply=reply.replace('\u2014',',').replace('\u2013',',')
     reply=re.sub('[\U0001F300-\U0001FAFF\uFE0F\u200D]','',reply).strip()
