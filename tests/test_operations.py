@@ -26,23 +26,38 @@ class OperationsTest(unittest.TestCase):
         self.assertEqual(j['status'],'sandbox_delivered');self.assertNotRegex(j['reply'],r'\d|₽')
         pass
         k=self.finish(self.incoming('Дай ссылку на тг','m2'))
-        self.assertIn('adi83742',k['reply']);self.assertNotIn('t.me',k['reply']);self.assertNotIn('@',k['reply'])
+        self.assertIn(app.CONFIG['accounts']['adilya']['telegram'].rsplit('/',1)[-1],k['reply']);self.assertNotIn('t.me',k['reply']);self.assertNotIn('@',k['reply'])
     def test_identity_honesty(self):
         j=self.finish(self.incoming('Ты бот?'))
         self.assertIn('ИИ-помощник',j['reply'])
+    def test_normal_replies_do_not_refer_to_profile_in_third_person(self):
+        for reply in ['там ответит сама Адиля)', 'это лучше спросить у девушки']:
+            with self.assertRaisesRegex(ValueError,'third_person_guard'):
+                app.check_reply_policy(reply,[{'role':'user','content':'давай в тг'}])
+        reply,_=app.policy_reply('Ты студентка?',{'declined':0,'invited':0})
+        self.assertNotIn('девушка',reply)
+    def test_profile_filter_contains_all_accounts(self):
+        from html.parser import HTMLParser
+        class Options(HTMLParser):
+            values=[]
+            def handle_starttag(self,tag,attrs):
+                if tag=='option':self.values.append(dict(attrs).get('value'))
+        parser=Options();parser.feed((app.ROOT/'dist/index.html').read_text())
+        self.assertTrue({'all','adilya','lyubov','mexico'}.issubset(parser.values))
     def test_plain_telegram_username_and_wrong_account_guard(self):
         conv={'account':'adilya','invited':False,'declined':False}
+        username=app.CONFIG['accounts']['adilya']['telegram'].rsplit('/',1)[-1]
         history=[{'role':'assistant','content':'привет)'},{'role':'user','content':'привет'},
                  {'role':'assistant','content':'массажем занимаюсь)'},{'role':'user','content':'понятно'},
                  {'role':'assistant','content':'да)'},{'role':'user','content':'хочу подробнее обсудить массаж'}]
-        with patch.object(app.PROVIDER,'chat',return_value='можем в тг продолжить) мой ник: adi83742'):
-            self.assertIn('adi83742',app.generate(conv,history)[0])
+        with patch.object(app.PROVIDER,'chat',return_value='можем в тг продолжить) мой ник: '+username):
+            self.assertIn(username,app.generate(conv,history)[0])
         for reply in ['давай сюда https://t.me/adi83742','найди @adi83742',
                       'найди '+app.CONFIG['accounts']['lyubov']['telegram'].rsplit('/',1)[-1]]:
             with patch.object(app.PROVIDER,'chat',return_value=reply):
                 with self.assertRaises(ValueError):app.generate(conv,history)
         conv['declined']=True
-        with patch.object(app.PROVIDER,'chat',return_value='мой ник: adi83742'):
+        with patch.object(app.PROVIDER,'chat',return_value='мой ник: '+username):
             with self.assertRaisesRegex(ValueError,'invitation_guard'):app.generate(conv,history)
     def test_refusal_and_stop(self):
         j=self.finish(self.incoming('Не хочу в телеграм'))
